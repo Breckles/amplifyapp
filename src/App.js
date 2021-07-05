@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { API } from 'aws-amplify';
+import { API, Storage } from 'aws-amplify';
 import { withAuthenticator, AmplifySignOut } from '@aws-amplify/ui-react';
 
 import { listNotes } from './graphql/queries';
@@ -9,7 +9,6 @@ import {
   deleteNote as deleteNoteMutation,
 } from './graphql/mutations';
 
-import logo from './logo.svg';
 import './App.css';
 
 const initialFormState = { name: '', description: '' };
@@ -22,8 +21,26 @@ function App() {
     fetchNotes();
   }, []);
 
+  const onChange = async (e) => {
+    if (!e.target.files[0]) return;
+    const file = e.target.files[0];
+    setFormData({ ...formData, image: file.name });
+    await Storage.put(file.name, file);
+    fetchNotes();
+  };
+
   const fetchNotes = async () => {
     const apiData = await API.graphql({ query: listNotes });
+    const notesFromAPI = apiData.data.listNotes.items;
+    await Promise.all(
+      notesFromAPI.map(async (note) => {
+        if (note.image) {
+          const image = await Storage.get(note.image);
+          note.image = image;
+        }
+        return note;
+      })
+    );
     setNotes(apiData.data.listNotes.items);
   };
 
@@ -33,6 +50,10 @@ function App() {
       query: createNoteMutation,
       variables: { input: formData },
     });
+    if (formData.image) {
+      const image = await Storage.get(formData.image);
+      formData.image = image;
+    }
     setNotes([...notes, formData]);
     setFormData(initialFormState);
   };
@@ -63,6 +84,7 @@ function App() {
         placeholder="Note description"
         value={formData.description}
       />
+      <input type="file" onChange={onChange} />
       <button onClick={createNote}>Create Note</button>
       <div style={{ marginBottom: 30 }}>
         {notes.map((note) => (
@@ -70,6 +92,13 @@ function App() {
             <h2>{note.name}</h2>
             <p>{note.description}</p>
             <button onClick={() => deleteNote(note)}>Delete note</button>
+            {note.image && (
+              <img
+                src={note.image}
+                style={{ width: 400 }}
+                alt="The image associated with this note"
+              />
+            )}
           </div>
         ))}
       </div>
